@@ -70,7 +70,9 @@ def fileMaker():
 def fileAppend(dirDetails):
     with open('./dirLog.csv', 'a') as rawDataOutput:
         dataOutAppend = csv.writer(rawDataOutput, delimiter=",", quotechar='"')
-        dataOutAppend.writerow([dirDetails["folderPath"],dirDetails["totalFileSize"],dirDetails["fileLastModifiedDate"],dirDetails["dirCount"],dirDetails["fileCount"]])
+        dataOutAppend.writerow([dirDetails["folderPath"],dirDetails["totalFileSize"],dirDetails["sizeType"],dirDetails["fileLastModifiedDate"],dirDetails["dirCount"],dirDetails["fileCount"]])
+
+        
 
     
 #################################################################
@@ -99,9 +101,25 @@ def dirWalker(folderPath):
         else:
             None
     lastTouch = sorted(list(set(lastTouch)))
+    
+    sizeLabel = {"b":"byte",
+             "k":"Kilobyte",
+             "m":"Megabyte",
+             "g":"Gigabyte",
+             "t":"Terabyte",
+             "p":"Petabyte",
+             "kb":"Kilobyte",
+             "mb":"Megabyte",
+             "gb":"Gigabyte",
+             "tb":"Terabyte",
+             "pb":"Petabyte",}
+    
     dirDetails["dirCount"] = dirCount
     dirDetails["fileCount"] = fileCount
-    dirDetails["totalFileSize"] = directorySize
+    sizeNumber = re.findall(r'(\d+)',str(directorySize))[0]
+    sizeType = sizeLabel(re.findall(r'(\D+)',str(directorySize))[0].lower())
+    dirDetails["totalFileSize"] = sizeNumber
+    dirDetails["sizeType"] = sizeType
     dirDetails["fileLastModifiedDate"] = lastTouch[-1]
     dirDetails["folderPath"]=folderPath
     fileAppend(dirDetails)
@@ -115,8 +133,8 @@ def dirWalker(folderPath):
 #################################################################
 if __name__ == "__main__":
     fileMaker()
-#     cpuCores = sys.argv[1]
-#     topLevelDir = sys.argv[2]
+    cpuCores = int(sys.argv[1])
+    topLevelDir = sys.argv[2]
 
 #     cpuCores = 10
 #     topLevelDir = "/ifs/gsb"
