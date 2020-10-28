@@ -5,8 +5,8 @@ import subprocess
 from tqdm import tqdm
 from multiprocessing import Pool
 import re
+import time
 
-sizeLabel = {"b":"byte","k":"Kilobyte","m":"Megabyte","g":"Gigabyte","t":"Terabyte","p":"Petabyte","kb":"Kilobyte","mb":"Megabyte","gb":"Gigabyte","tb":"Terabyte","pb":"Petabyte"}
 
 #################################################################
 ##### CAPTURE THE FOLDER/FILE DETAILS FROM A 'ls -d' BASH COMMAND
@@ -33,7 +33,7 @@ def firstLevelDirs(folderPath):
 ##### AND RETURN A LIST OF ALL FILES/FOLDERS/SIZES/DATES
 def folderDetails(folderPath):
     # print("Seizing Folder Details. Please Wait.\n")
-    command = "du -ach --time {}".format(folderPath)
+    command = "du -acb --time {}".format(folderPath)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
     outputRowResults = []
     while True:
@@ -41,8 +41,11 @@ def folderDetails(folderPath):
         if len(output) == 0 and process.poll() is not None:
             break
         if output:
-            outputRow = output.strip().decode("utf-8")
-            outputRowResults.append(str(outputRow))
+            try:
+                outputRow = output.strip().decode("utf-8")
+                outputRowResults.append(str(outputRow))
+            except:
+                errorFileAppend(fullPath)
     return(outputRowResults)
 
 
@@ -63,8 +66,18 @@ def cleanPath(pathToClean):
 def fileMaker():
     with open('./dirLog.csv', 'w') as rawDataOutput:
         dataOut = csv.writer(rawDataOutput, delimiter=",", quotechar='"')
-        dataOut.writerow(["folderPath","totalFileSize","sizeType","fileLastModifiedDate","dirCount","fileCount"])
+        dataOut.writerow(["folderPath","terabyteSize","byteSizeHumanReadable","fileLastModifiedDate","dirCount","fileCount","topFiles"])
 
+#################################################################
+##### MAKE HUMAN READABLE FILE/FOLDER SIZES
+##### 
+def sizeConvert(numb, suffix='b'):
+    byteSize = int(numb)
+    for unit in ['','k','m','g','t','p','e','z']:
+        if abs(byteSize) < 1024.0:
+            return "%3.1f%s%s" % (byteSize, unit, suffix)
+        byteSize /= 1024.0
+    return "%.1f%s%s" % (byteSize, 'Yi', suffix)
         
 #################################################################
 ##### APPEND TO THE LOG FILE
@@ -72,7 +85,7 @@ def fileMaker():
 def fileAppend(dirDetails):
     with open('./dirLog.csv', 'a') as rawDataOutput:
         dataOutAppend = csv.writer(rawDataOutput, delimiter=",", quotechar='"')
-        dataOutAppend.writerow([dirDetails["folderPath"],dirDetails["totalFileSize"],dirDetails["sizeType"],dirDetails["fileLastModifiedDate"],dirDetails["dirCount"],dirDetails["fileCount"]])
+        dataOutAppend.writerow([dirDetails["folderPath"],dirDetails["terabyteSize"],dirDetails["byteSizeHumanReadable"],dirDetails["fileLastModifiedDate"],dirDetails["dirCount"],dirDetails["fileCount"],dirDetails["topFiles"]])
 
 
 #################################################################
@@ -97,41 +110,47 @@ def errorFileAppend(fullPath):
 ##### THE folderDetails FUNCTION. OUTPUT IS A SIMPLE DICTIONARY
 def dirWalker(folderPath):
     try:
-        print(folderPath)
         folderPath = cleanPath(folderPath)
         payload = folderDetails(folderPath)
-        # print("Parsing Folder Details.\n")
 
         lastTouch =[]
         dirDetails = {}
         dirCount = 0
         fileCount = 0
+        topFilesTemp = {}
         for item in tqdm(payload):
             item = item.replace("|","")
             fileDirRow = item.split("\t")
             lastTouch.append(fileDirRow[1])
             path=fileDirRow[2]  
-            if os.path.isdir(path):  
+            if os.path.isdir(path): 
                 dirCount += 1 
             elif os.path.isfile(path):  
-                fileCount += 1  
+                fileCount += 1
+                fileSize = fileDirRow[0]
+                topFilesTemp[int(fileSize)] = path
             elif fileDirRow[-1].lower() == "total":
-                directorySize = fileDirRow[0]
-                print("_______{}________".format(directorySize))
-                sizeNumber = float(re.findall(r'(\d+\.\d+)',str(directorySize))[0])
-                directorySizeStripped = re.sub(r'[^A-Za-z]+', "", directorySize)
-                sizeType = sizeLabel[re.findall(r'(\D+)',str(directorySizeStripped))[0].lower()]
-                print(sizeNumber, sizeType)
+                byteSize = float(fileDirRow[0])
+                terabyteSize = float(fileDirRow[0])/float(1099511627775.9978)
+                byteSizeHumanReadable = sizeConvert(byteSize) 
             else:
                 None
         lastTouch = sorted(list(set(lastTouch)))
-    
-        dirDetails["totalFileSize"] = sizeNumber
-        dirDetails["sizeType"] = sizeType
+        
+        top5Count = 0
+        topFiles = {}
+        for key, value in sorted(topFilesTemp.items(), key=lambda item: item[0], reverse=True):
+            if top5Count <11:
+                topFiles[key]=[sizeConvert(key),value]
+                top5Count +=1
+
+        dirDetails["terabyteSize"] = terabyteSize
+        dirDetails["byteSizeHumanReadable"] = byteSizeHumanReadable
         dirDetails["fileLastModifiedDate"] = lastTouch[-1]
         dirDetails["folderPath"]=folderPath
         dirDetails["dirCount"] = dirCount
         dirDetails["fileCount"] = fileCount
+        dirDetails["topFiles"] = topFiles
         fileAppend(dirDetails)
     except:
         errorFileAppend(fullPath)
@@ -155,3 +174,5 @@ if __name__ == "__main__":
     result = p.map(dirWalker, directoryList)   ## Pass values from someList to function
     p.close()
     p.join()
+    # for row in tqdm(directoryList):
+    #     dirWalker(row)
